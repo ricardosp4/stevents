@@ -13,3 +13,5 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports: 
     sf
+URL: https://github.com/ricardosp4/stevents
+BugReports: https://github.com/ricardosp4/stevents/issues
