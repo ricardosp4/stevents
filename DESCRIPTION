@@ -15,3 +15,7 @@ Imports:
     sf
 URL: https://github.com/ricardosp4/stevents
 BugReports: https://github.com/ricardosp4/stevents/issues
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
