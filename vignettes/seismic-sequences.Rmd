@@ -1,0 +1,371 @@
+---
+title: "Spatio-temporal Hawkes processes: real seismic sequences"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Spatio-temporal Hawkes processes: real seismic sequences}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 7,
+  fig.height = 4
+)
+```
+
+## Overview
+
+Seismic sequences are a canonical application of Hawkes process models.
+Each earthquake raises the probability of subsequent earthquakes through
+stress transfer — a mechanism described by the Omori–Utsu law, which is
+a special case of the exponential decay kernel implemented in
+`hawkes_intensity()`.
+
+This vignette applies `stevents` to two real seismic sequences downloaded
+directly from the USGS Earthquake Catalog API:
+
+- **Venezuela 2026**: a Mw 7.5 mainshock on 24 June 2026, one of the
+  strongest earthquakes in Venezuela in over a century. The sequence is
+  recent and the aftershock catalog is still growing.
+- **Amatrice 2016**: a Mw 6.2 mainshock on 24 August 2016 in central
+  Italy, followed by a Mw 6.5 event on 30 October. With 76 recorded
+  aftershocks over three months, this sequence provides a complete view
+  of aftershock decay and self-excitation.
+
+Together, the two cases illustrate how `stevents` handles real
+spatio-temporal point patterns at different stages of completeness.
+
+## Case study 1: Venezuela 2026
+
+On 24 June 2026, two major earthquakes struck northern Venezuela within
+39 seconds: a Mw 7.2 foreshock followed by a Mw 7.5 mainshock, both
+near Yumare in the state of Yaracuy. The sequence caused at least 920
+deaths and more than 4,500 injuries.
+
+Seismic sequences are a natural application of Hawkes process models.
+Each earthquake raises the probability of subsequent earthquakes through
+stress transfer, a mechanism known as Omori–Utsu aftershock decay, which
+is a special case of the exponential kernel implemented in `stevents`.
+
+This vignette downloads the complete aftershock sequence from the USGS
+Earthquake Catalog API and analyses it using `stevents`.
+
+## Data
+
+The USGS FDSN API provides programmatic access to earthquake catalogs.
+We query all events of magnitude 2.5 or greater within 200 km of the
+mainshock epicenter between 24 June and 27 June 2026.
+
+```{r download, message = FALSE}
+library(stevents)
+library(sf)
+library(ggplot2)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+url <- paste0(
+  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
+  "&starttime=2026-06-22",
+  "&endtime=2026-07-27",
+  "&minmagnitude=2.5",
+  "&latitude=10.435",
+  "&longitude=-68.472",
+  "&maxradiuskm=200",
+  "&orderby=time"
+)
+
+raw <- read.csv(url(url), stringsAsFactors = FALSE)
+```
+
+We retain only the columns needed and convert timestamps to `POSIXct`:
+
+```{r clean}
+eq <- data.frame(
+  lon       = raw$longitude,
+  lat       = raw$latitude,
+  depth_km  = raw$depth,
+  magnitude = raw$mag,
+  time      = as.POSIXct(raw$time, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+)
+
+nrow(eq)
+range(eq$magnitude)
+range(eq$time)
+```
+
+## Creating an `stevents` object
+
+Coordinates are in geographic degrees (WGS84). We project to UTM Zone
+19N (EPSG:32619), the metric CRS appropriate for northern Venezuela, so
+that distances in `neighbor_history()` and `hawkes_intensity()` are in
+metres.
+
+```{r project}
+pts <- st_as_sf(eq, coords = c("lon", "lat"), crs = 4326)
+pts_utm <- st_transform(pts, crs = 32619)
+coords  <- st_coordinates(pts_utm)
+
+events <- stevents(
+  x    = coords[, 1],
+  y    = coords[, 2],
+  time = eq$time,
+  crs  = 32619
+)
+
+print(events)
+```
+
+## Spatial distribution
+
+```{r map, fig.height = 5, fig.width = 7, message = FALSE, warning = FALSE}
+venezuela <- ne_countries(
+  country     = "Venezuela",
+  scale       = "medium",
+  returnclass = "sf"
+)
+
+eq_sf <- st_as_sf(eq, coords = c("lon", "lat"), crs = 4326)
+
+bbox_v  <- st_bbox(eq_sf)
+buffer  <- 0.5  # degrees
+
+ggplot() +
+  geom_sf(data = venezuela, fill = "#F5F0E8", colour = "grey60",
+          linewidth = 0.3) +
+  geom_sf(data   = eq_sf,
+          aes(colour = magnitude),
+          size   = 2.5,
+          alpha  = 0.8) +
+  scale_colour_gradient(low = "#FD8D3C", high = "#8B2500",
+                        name = "Magnitude") +
+  coord_sf(
+    xlim = c(bbox_v["xmin"] - buffer, bbox_v["xmax"] + buffer),
+    ylim = c(bbox_v["ymin"] - buffer, bbox_v["ymax"] + buffer)
+  ) +
+  labs(
+    title   = "Seismic sequence. Venezuela, 24–27 June 2026",
+    caption = "Source: USGS Earthquake Catalog"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title   = element_text(size = 12, face = "bold"),
+    plot.caption = element_text(size = 7, colour = "grey60")
+  )
+```
+
+## Temporal pattern
+
+```{r plot-events, fig.height = 4}
+plot(events)
+```
+
+The temporal plot shows the characteristic aftershock decay: high
+activity immediately after the mainshock, declining rapidly over hours
+and days. This pattern is described by the Omori–Utsu law.
+
+## Neighbour history
+
+We compute the discrete self-excitation signal using a 50 km radius and
+a 6-hour lag, parameters appropriate for aftershock triggering at this
+spatial and temporal scale.
+
+```{r neighbor}
+events_hist <- neighbor_history(
+  events,
+  radius = 50000,      # 50 km
+  lag    = 6 * 3600    # 6 hours
+)
+
+summary(events_hist$data$n_recent_neighbors)
+```
+
+## Hawkes intensity
+
+The continuous kernel uses the same spatial scale but replaces the
+binary window with exponential decay. We set the temporal decay to
+approximately 2 hours, consistent with early aftershock sequences.
+
+```{r hawkes}
+events_hawkes <- hawkes_intensity(
+  events_hist,
+  alpha = 0.8,
+  beta  = 1 / (2 * 3600),   # decay scale: ~2 hours
+  gamma = 1 / 50000          # decay scale: ~50 km
+)
+
+summary(events_hawkes$data$hawkes_intensity)
+```
+
+The intensity peaks immediately after the mainshock and decays as the
+sequence quiets:
+
+```{r hawkes-plot, fig.height = 4}
+plot(
+  events_hawkes$data$time,
+  events_hawkes$data$hawkes_intensity,
+  type = "l",
+  col  = "#E05A2B",
+  xlab = "Time (UTC)",
+  ylab = "Hawkes intensity",
+  main = "Conditional intensity. Venezuela aftershock sequence"
+)
+```
+
+## Discrete vs continuous excitation
+
+```{r compare, fig.height = 4}
+plot(
+  events_hawkes$data$n_recent_neighbors,
+  events_hawkes$data$hawkes_intensity,
+  xlab = "n_recent_neighbors (discrete)",
+  ylab = "Hawkes intensity (continuous)",
+  pch  = 16,
+  col  = adjustcolor("#E05A2B", 0.5),
+  main = "Discrete vs continuous excitation"
+)
+abline(lm(hawkes_intensity ~ n_recent_neighbors,
+          data = events_hawkes$data),
+       col = "#8B2500", lwd = 2, lty = 2)
+```
+
+## Case study 2: Amatrice, Italy 2016
+
+The Amatrice sequence is one of the most studied seismic sequences in
+recent European history. A Mw 6.2 mainshock struck central Italy on 24
+August 2016, followed by a second major event of Mw 6.5 on 30 October
+2016, stronger than the first, which reactivated the sequence and
+produced a new wave of aftershocks. The full three-month catalog
+contains 76 events of magnitude 2.5 or greater, making it a richer
+dataset for illustrating self-excitation than a simple
+mainshock–aftershock sequence.
+
+```{r italy-download, message = FALSE}
+url_italy <- paste0(
+  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
+  "&starttime=2016-08-20",
+  "&endtime=2016-12-20",
+  "&minmagnitude=2.5",
+  "&latitude=42.698",
+  "&longitude=13.234",
+  "&maxradiuskm=100",
+  "&orderby=time"
+)
+
+raw_italy <- read.csv(url(url_italy), stringsAsFactors = FALSE)
+
+italy <- data.frame(
+  lon       = raw_italy$longitude,
+  lat       = raw_italy$latitude,
+  depth_km  = raw_italy$depth,
+  magnitude = raw_italy$mag,
+  time      = as.POSIXct(raw_italy$time,
+                          format = "%Y-%m-%dT%H:%M:%OS",
+                          tz     = "UTC")
+)
+```
+
+```{r italy-project}
+pts_italy     <- st_as_sf(italy, coords = c("lon", "lat"), crs = 4326)
+pts_italy_utm <- st_transform(pts_italy, crs = 32633)  # UTM zone 33N for Italy
+coords_italy  <- st_coordinates(pts_italy_utm)
+
+events_italy <- stevents(
+  x    = coords_italy[, 1],
+  y    = coords_italy[, 2],
+  time = italy$time,
+  crs  = 32633
+)
+
+print(events_italy)
+```
+
+```{r italy-map, fig.height = 5, fig.width = 7, message = FALSE, warning = FALSE}
+italy_map <- ne_countries(
+  country     = "Italy",
+  scale       = "medium",
+  returnclass = "sf"
+)
+
+bbox_i <- st_bbox(pts_italy)
+buffer <- 0.15  # degrees
+
+ggplot() +
+  geom_sf(data = italy_map, fill = "#F5F0E8", colour = "grey60",
+          linewidth = 0.3) +
+  geom_sf(data   = pts_italy,
+          aes(colour = magnitude),
+          size   = 2.5,
+          alpha  = 0.8) +
+  scale_colour_gradient(low = "#FD8D3C", high = "#8B2500",
+                        name = "Magnitude") +
+  coord_sf(
+    xlim = c(bbox_i["xmin"] - buffer, bbox_i["xmax"] + buffer),
+    ylim = c(bbox_i["ymin"] - buffer, bbox_i["ymax"] + buffer)
+  ) +
+  labs(
+    title   = "Amatrice aftershock sequence. August–November 2016",
+    caption = "Source: USGS Earthquake Catalog"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title   = element_text(size = 12, face = "bold"),
+    plot.caption = element_text(size = 7, colour = "grey60")
+  )
+```
+
+```{r italy-plot}
+plot(events_italy)
+```
+
+The temporal histogram shows the characteristic aftershock decay: high
+activity in the first days after the mainshock, declining progressively
+over the following weeks.
+
+```{r italy-hawkes}
+events_italy_h <- neighbor_history(
+  events_italy,
+  radius = 30000,     # 30 km
+  lag    = 3 * 86400  # 3 days
+)
+
+events_italy_h <- hawkes_intensity(
+  events_italy_h,
+  alpha = 0.8,
+  beta  = 1 / (2 * 86400),  # decay scale: ~2 days
+  gamma = 1 / 30000          # decay scale: ~30 km
+)
+
+summary(events_italy_h$data$hawkes_intensity)
+```
+
+```{r italy-intensity-plot, fig.height = 4}
+plot(
+  events_italy_h$data$time,
+  events_italy_h$data$hawkes_intensity,
+  type = "l",
+  col  = "#E05A2B",
+  xlab = "Time (UTC)",
+  ylab = "Hawkes intensity",
+  main = "Conditional intensity. Amatrice sequence"
+)
+```
+
+## Summary
+
+This vignette applied `stevents` to two real seismic sequences:
+
+- **Venezuela 2026**: an ongoing sequence captured in near real time,
+  demonstrating the full `stevents` workflow with live USGS data.
+- **Amatrice 2016**: a complete aftershock sequence with 76 recorded
+  events, showing the Omori–Utsu temporal decay and a clear
+  self-excitation signal in the Hawkes intensity.
+
+Both sequences illustrate the same principle: past seismic activity
+raises the conditional probability of future events, and
+`hawkes_intensity()` quantifies this effect continuously in space
+and time. Estimating the kernel parameters from data via maximum
+likelihood is the natural next step toward a fully calibrated
+spatio-temporal Hawkes model.
