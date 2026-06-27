@@ -41,19 +41,24 @@ interior.
 
 We simulate 300 ignitions over a single fire season (April–October 2023)
 with two spatial clusters representing these high-risk zones, plus a
-background of scattered events.
+background of scattered events. A land mask derived from Natural Earth
+ensures no events fall in the sea.
 
-```{r simulate}
+```{r simulate, message = FALSE, warning = FALSE}
 library(stevents)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggplot2)
 
 set.seed(2024)
 
-n_total     <- 300
-n_cluster1  <- 120   # NW cluster: Galicia / N. Portugal
-n_cluster2  <- 100   # Mediterranean interior
-n_background <- 80   # scattered background
+n_cluster1   <- 120
+n_cluster2   <- 100
+n_background <-  80
+n_total      <- n_cluster1 + n_cluster2 + n_background
 
-# --- Cluster 1: NW Iberia ---
+# --- Cluster 1: NW Iberia (Galicia / N. Portugal) ---
 x1 <- rnorm(n_cluster1, mean = 180000, sd = 40000)
 y1 <- rnorm(n_cluster1, mean = 4700000, sd = 50000)
 
@@ -68,24 +73,38 @@ y3 <- runif(n_background, 4000000, 4900000)
 x_all <- c(x1, x2, x3)
 y_all <- c(y1, y2, y3)
 
-# --- Temporal distribution: seasonal peak July-August ---
-# We model fire season timing with a Beta distribution skewed toward
-# mid-summer. Days are mapped onto April 1 - October 31 (214 days).
+# --- Seasonal timing: Beta(3, 1.5) peaks in mid-summer ---
 season_start <- as.POSIXct("2023-04-01")
 season_end   <- as.POSIXct("2023-10-31")
-season_days  <- as.numeric(difftime(season_end, season_start, units = "secs"))
+season_secs  <- as.numeric(difftime(season_end, season_start, units = "secs"))
+t_frac       <- rbeta(n_total, shape1 = 3, shape2 = 1.5)
+t_all        <- season_start + t_frac * season_secs
 
-# Beta(2, 5) gives a right-skewed distribution peaking around day 60
-# (early June); Beta(5, 2) peaks late. We use Beta(3, 1.5) for a
-# mid-summer peak with a long tail into autumn.
-t_frac  <- rbeta(n_total, shape1 = 3, shape2 = 1.5)
-t_all   <- season_start + t_frac * season_days
+# --- Land mask: crop to Peninsula, exclude Canarias and Baleares ---
+iberia_raw <- ne_countries(
+  country     = c("Spain", "Portugal"),
+  scale       = "medium",
+  returnclass = "sf"
+)
+peninsula_bbox <- st_bbox(
+  c(xmin = -9.5, ymin = 36.0, xmax = 3.3, ymax = 44.0),
+  crs = st_crs(4326)
+)
+iberia     <- st_crop(iberia_raw, peninsula_bbox)
+iberia_utm <- st_transform(iberia, crs = 25830)
+
+candidates <- st_as_sf(
+  data.frame(x = x_all, y = y_all),
+  coords = c("x", "y"),
+  crs    = 25830
+)
+on_land <- st_within(candidates, st_union(iberia_utm), sparse = FALSE)[, 1]
 
 events <- stevents(
-  x    = x_all,
-  y    = y_all,
-  time = t_all,
-  crs  = 25830           # ETRS89 / UTM zone 30N
+  x    = x_all[on_land],
+  y    = y_all[on_land],
+  time = t_all[on_land],
+  crs  = 25830
 )
 ```
 
@@ -93,7 +112,8 @@ events <- stevents(
 
 ### `print`
 
-The print method gives a compact overview of the event pattern:
+The `print` method gives a compact overview of the event pattern —
+number of events, temporal extent, bounding box, and CRS:
 
 ```{r print-stevents}
 print(events)
@@ -101,8 +121,8 @@ print(events)
 
 ### `summary`
 
-The summary method reports derived statistics — temporal span, mean daily
-rate, and spatial density:
+The `summary` method reports derived statistics: temporal span, mean
+daily rate, and a rough measure of spatial density:
 
 ```{r summary-stevents}
 summary(events)
@@ -110,12 +130,99 @@ summary(events)
 
 ### `plot`
 
-The plot method shows the spatial distribution of ignitions alongside the
-temporal intensity curve. The seasonal peak in summer and the two spatial
-clusters should be clearly visible:
+The built-in `plot` method shows the spatial scatter alongside the
+temporal intensity histogram. The seasonal peak in July–August and the
+two spatial clusters are clearly visible:
 
 ```{r plot-stevents, fig.height = 4.5}
 plot(events)
+```
+
+### `as_sf`: interoperability with the `sf` ecosystem
+
+`as_sf()` converts the `stevents` object to a standard `sf` point layer,
+making it immediately compatible with `ggplot2`, `tmap`, and any other
+package in the spatial R ecosystem. This also allows overlaying the
+events on a proper basemap of the Iberian Peninsula:
+
+```{r map, fig.height = 5, fig.width = 7, message = FALSE}
+events_sf <- as_sf(events)
+
+ggplot() +
+  geom_sf(
+    data      = iberia,
+    fill      = "#F5F0E8",
+    colour    = "grey60",
+    linewidth = 0.3
+  ) +
+  geom_sf(
+    data   = st_transform(events_sf, crs = 4326),
+    colour = "#E05A2B",
+    alpha  = 0.5,
+    size   = 1.2
+  ) +
+  coord_sf(xlim = c(-9.5, 3.3), ylim = c(36.0, 44.0)) +
+  labs(
+    title    = "Simulated wildfire ignitions — Iberian Peninsula 2023",
+    subtitle = paste0(nrow(events$data), " events | land only | ETRS89 / UTM zone 30N"),
+    caption  = "Simulated data for illustration purposes"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 9,  colour = "grey40"),
+    plot.caption  = element_text(size = 7,  colour = "grey60")
+  )
+```
+
+### `subset`: filtering by space and time
+
+`subset()` returns a new `stevents` containing only the events that
+satisfy a temporal window, a spatial bounding box, or both. Here we
+extract the peak fire months (July–August) and confirm that the
+resulting object retains only summer events:
+
+```{r subset-stevents}
+events_summer <- subset(
+  events,
+  t_from = as.POSIXct("2023-07-01"),
+  t_to   = as.POSIXct("2023-08-31")
+)
+print(events_summer)
+```
+
+The summer subset plotted on the basemap shows the same two clusters
+but with higher relative density in the NW, consistent with the
+historical pattern of summer fire activity in Galicia:
+
+```{r map-summer, fig.height = 5, fig.width = 7}
+events_summer_sf <- as_sf(events_summer)
+
+ggplot() +
+  geom_sf(
+    data      = iberia,
+    fill      = "#F5F0E8",
+    colour    = "grey60",
+    linewidth = 0.3
+  ) +
+  geom_sf(
+    data   = st_transform(events_summer_sf, crs = 4326),
+    colour = "#E05A2B",
+    alpha  = 0.6,
+    size   = 1.5
+  ) +
+  coord_sf(xlim = c(-9.5, 3.3), ylim = c(36.0, 44.0)) +
+  labs(
+    title    = "Peak summer ignitions — July and August 2023",
+    subtitle = paste0(nrow(events_summer$data), " events"),
+    caption  = "Simulated data for illustration purposes"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 9,  colour = "grey40"),
+    plot.caption  = element_text(size = 7,  colour = "grey60")
+  )
 ```
 
 ## The `stgrid` class
@@ -128,7 +235,7 @@ statistical stability with spatial detail for a season-level analysis.
 ```{r create-grid}
 grid <- stgrid(
   bbox      = c(100000, 4000000, 900000, 4900000),
-  cell_size = 100000,          # 100 km in metres
+  cell_size = 100000,
   t_window  = as.POSIXct(c("2023-04-01", "2023-10-31")),
   t_step    = "1 month",
   crs       = 25830
@@ -149,8 +256,8 @@ summary(grid)
 
 ### `plot`
 
-A raw grid before counting has no event information; all cells are drawn
-with equal fill:
+A raw grid before counting has no event information; all cells are
+drawn with equal fill:
 
 ```{r plot-stgrid-empty, fig.height = 5}
 plot(grid)
@@ -158,9 +265,10 @@ plot(grid)
 
 ## Counting events per space-time cell
 
-`count_events()` assigns each ignition to a spatial cell and temporal bin,
-returning the grid enriched with a `counts` table. This is the basic
-aggregation step before fitting an intensity model.
+`count_events()` assigns each ignition to a spatial cell and temporal
+bin, returning the grid enriched with a `counts` table. This is the
+basic aggregation step before fitting a spatially explicit intensity
+model.
 
 ```{r count-events}
 grid_counted <- count_events(events, grid)
@@ -168,26 +276,26 @@ head(grid_counted$counts)
 ```
 
 Plotting the enriched grid shades cells by total event count across the
-full season. The NW and Mediterranean clusters should stand out clearly:
+full season. The NW and Mediterranean clusters stand out clearly:
 
 ```{r plot-stgrid-counts, fig.height = 5}
 plot(grid_counted)
 ```
 
-We can also inspect a single temporal bin. Bin 2 corresponds to May, when
-activity is beginning to rise:
+We can also inspect a single temporal bin. Bin 4 corresponds to July,
+the month of peak fire activity:
 
 ```{r plot-stgrid-bin, fig.height = 5}
-plot(grid_counted, t_bin = 2)
+plot(grid_counted, t_bin = 4)
 ```
 
 ## Computing neighbour history
 
-`neighbor_history()` computes, for each event, how many previous ignitions
-occurred within a spatial radius and a temporal lag. This quantity
-approximates the self-excitation signal in a Hawkes process model: a high
-neighbour count suggests the event may have been triggered by recent nearby
-activity rather than background conditions alone.
+`neighbor_history()` computes, for each event, how many previous
+ignitions occurred within a spatial radius and a temporal lag. This
+quantity approximates the self-excitation signal in a Hawkes process
+model: a high neighbour count suggests the event may have been triggered
+by recent nearby activity rather than background conditions alone.
 
 We use a 50 km radius and a 14-day lag — parameters consistent with the
 spatial scale of fire weather persistence and the typical duration of
@@ -196,17 +304,16 @@ elevated fire risk following a large ignition event.
 ```{r neighbor-history}
 events_hist <- neighbor_history(
   events,
-  radius = 50000,      # 50 km in metres
-  lag    = 14 * 86400  # 14 days in seconds
+  radius = 50000,       # 50 km in metres
+  lag    = 14 * 86400   # 14 days in seconds
 )
-
 summary(events_hist$data$n_recent_neighbors)
 ```
 
-Most ignitions have zero or very few recent neighbours, as expected for a
-background-dominated process. The tail of the distribution captures the
-clustered summer episodes where multiple ignitions follow one another in
-quick succession within the same region.
+Most ignitions have zero or very few recent neighbours, as expected for
+a background-dominated process. The tail of the distribution captures
+the clustered summer episodes where multiple ignitions follow one
+another in quick succession:
 
 ```{r hist-neighbors, fig.height = 4}
 hist(
@@ -220,18 +327,217 @@ hist(
 )
 ```
 
+The spatial pattern of excitation can also be visualised on the
+basemap. Events with at least one recent neighbour are highlighted in
+dark red, revealing that self-excitation is concentrated in the
+high-risk NW cluster:
+
+```{r map-neighbors, fig.height = 5, fig.width = 7}
+events_hist_sf <- as_sf(events_hist)
+events_hist_sf <- st_transform(events_hist_sf, crs = 4326)
+events_hist_sf$excited <- events_hist_sf$n_recent_neighbors > 0
+
+ggplot() +
+  geom_sf(
+    data      = iberia,
+    fill      = "#F5F0E8",
+    colour    = "grey60",
+    linewidth = 0.3
+  ) +
+  geom_sf(
+    data  = events_hist_sf,
+    aes(colour = excited),
+    alpha = 0.6,
+    size  = 1.2
+  ) +
+  scale_colour_manual(
+    values = c("FALSE" = "#FDCBA8", "TRUE" = "#8B2500"),
+    labels = c("No recent neighbours", "≥1 recent neighbour"),
+    name   = NULL
+  ) +
+  coord_sf(xlim = c(-9.5, 3.3), ylim = c(36.0, 44.0)) +
+  labs(
+    title    = "Self-excitation signal across the Peninsula",
+    subtitle = paste0(sum(events_hist_sf$excited), " of ",
+                      nrow(events_hist_sf), " events with ≥1 recent neighbour"),
+    caption  = "Radius = 50 km | Lag = 14 days"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 9,  colour = "grey40"),
+    plot.caption  = element_text(size = 7,  colour = "grey60"),
+    legend.position = "bottom"
+  )
+```
+
+## Hawkes process conditional intensity
+
+The `neighbor_history()` function counts past events within a fixed
+spatial radius and temporal lag — a discrete, binary approximation of
+self-excitation. `hawkes_intensity()` replaces this with a continuous
+exponential kernel that weights every past event by how recent and how
+close it was:
+
+$$\Lambda_i = \sum_{j:\, t_j < t_i} \alpha \cdot e^{-\beta(t_i - t_j)} \cdot e^{-\gamma \, d_{ij}}$$
+
+The three parameters control the shape of the excitation surface:
+
+- $\alpha$ — overall excitation magnitude
+- $\beta$ — temporal decay rate (larger = faster decay)
+- $\gamma$ — spatial decay rate (larger = shorter range)
+
+We calibrate the parameters to the Iberian fire context: a temporal
+decay of roughly one week and a spatial range of ~50 km, consistent
+with the persistence of fire-prone meteorological conditions.
+
+```{r hawkes-intensity}
+events_hawkes <- hawkes_intensity(
+  events_hist,
+  alpha = 0.8,
+  beta  = 1 / (7 * 86400),    # decay scale: ~1 week
+  gamma = 1 / 50000            # decay scale: ~50 km
+)
+summary(events_hawkes$data$hawkes_intensity)
+```
+
+### Spatial distribution of Hawkes intensity
+
+The continuous intensity can be mapped directly onto the Peninsula.
+Areas of high intensity correspond to locations where multiple recent
+nearby ignitions have accumulated excitation — the NW cluster is the
+dominant hotspot:
+
+```{r map-hawkes, fig.height = 5, fig.width = 7}
+events_hawkes_sf <- as_sf(events_hawkes)
+events_hawkes_sf <- st_transform(events_hawkes_sf, crs = 4326)
+
+ggplot() +
+  geom_sf(
+    data      = iberia,
+    fill      = "#F5F0E8",
+    colour    = "grey60",
+    linewidth = 0.3
+  ) +
+  geom_sf(
+    data  = events_hawkes_sf,
+    aes(colour = hawkes_intensity),
+    size  = 1.5,
+    alpha = 0.8
+  ) +
+  scale_colour_gradient(
+    low  = "#FFF5F0",
+    high = "#8B2500",
+    name = "Hawkes\nintensity"
+  ) +
+  coord_sf(xlim = c(-9.5, 3.3), ylim = c(36.0, 44.0)) +
+  labs(
+    title    = "Hawkes conditional intensity — Iberian Peninsula 2023",
+    subtitle = expression(paste(alpha, " = 0.8 | ",
+                                beta, " ~ 1 week | ",
+                                gamma, " ~ 50 km")),
+    caption  = "Simulated data for illustration purposes"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 9,  colour = "grey40"),
+    plot.caption  = element_text(size = 7,  colour = "grey60")
+  )
+```
+
+### Comparing discrete vs continuous excitation
+
+Both `n_recent_neighbors` and `hawkes_intensity` capture the same
+underlying signal but with different assumptions. The scatter plot shows
+they correlate positively, but the continuous kernel captures finer
+variation that the binary window misses entirely — events with zero
+neighbours can still carry non-trivial Hawkes intensity from events just
+outside the fixed window:
+
+```{r compare-plot, fig.height = 4.5}
+old_par <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+plot(
+  events_hawkes$data$n_recent_neighbors,
+  events_hawkes$data$hawkes_intensity,
+  xlab = "n_recent_neighbors  (discrete)",
+  ylab = "Hawkes intensity  (continuous)",
+  main = "Discrete vs continuous excitation",
+  pch  = 16,
+  col  = adjustcolor("#E05A2B", alpha.f = 0.5),
+  cex  = 0.8
+)
+abline(lm(hawkes_intensity ~ n_recent_neighbors,
+          data = events_hawkes$data),
+       col = "#8B2500", lwd = 2, lty = 2)
+
+plot(
+  events_hawkes$data$time,
+  events_hawkes$data$hawkes_intensity,
+  type = "l",
+  col  = "#E05A2B",
+  xlab = "Time",
+  ylab = "Hawkes intensity",
+  main = "Conditional intensity over the fire season"
+)
+
+par(old_par)
+```
+
+### Sensitivity to decay parameters
+
+A key modelling decision is the choice of $\beta$. A fast temporal
+decay concentrates excitation on very recent events; a slow decay
+propagates influence further into the future:
+
+```{r sensitivity, fig.height = 4}
+betas <- c(
+  "fast\n(1 day)"    = 1 / 86400,
+  "medium\n(1 week)" = 1 / (7 * 86400),
+  "slow\n(1 month)"  = 1 / (30 * 86400)
+)
+
+intensities <- sapply(betas, function(b) {
+  h <- hawkes_intensity(events_hist, alpha = 0.8, beta = b, gamma = 1 / 50000)
+  mean(h$data$hawkes_intensity)
+})
+
+barplot(
+  intensities,
+  col       = c("#FD8D3C", "#E05A2B", "#8B2500"),
+  border    = NA,
+  ylab      = "Mean Hawkes intensity",
+  main      = "Sensitivity to temporal decay parameter",
+  las       = 1,
+  names.arg = names(betas)
+)
+```
+
+The mean intensity grows with slower decay because each event's
+excitation lingers longer and accumulates over the season. In practice,
+$\beta$ and $\gamma$ would be estimated from the data via maximum
+likelihood — a natural extension of this package toward full Hawkes
+process inference with INLA.
+
 ## Summary
 
-This vignette demonstrated the core `stevents` workflow:
+This vignette demonstrated the complete `stevents` workflow for
+spatio-temporal wildfire analysis:
 
-1. Construct an `stevents` object from coordinates and timestamps.
-2. Inspect it with `print()`, `summary()`, and `plot()`.
-3. Build an `stgrid` tessellation and inspect it with the same methods.
-4. Aggregate events with `count_events()` to obtain per-cell counts.
-5. Enrich each event with `neighbor_history()` to capture the self-excitation
-   signal relevant to Hawkes process modelling.
+1. **Simulate** a realistic ignition dataset with seasonal and spatial
+   structure, filtered to land using a Natural Earth basemap.
+2. **Inspect** the `stevents` object with `print()`, `summary()`, and `plot()`.
+3. **Map** events on the Iberian Peninsula via `as_sf()` and `ggplot2`.
+4. **Filter** by time and space with `subset()` to isolate the peak fire season.
+5. **Tessellate** the study region with `stgrid` and aggregate events
+   per cell using `count_events()`.
+6. **Quantify self-excitation** with `neighbor_history()` (discrete) and
+   `hawkes_intensity()` (continuous exponential kernel).
+7. **Visualise** the spatial distribution of excitation back on the
+   basemap to identify hotspots.
 
-The resulting data structures — a classified event table with neighbour
-history and a gridded count surface — are the natural inputs for a
-spatio-temporal intensity model such as a log-Gaussian Cox process or a
-Hawkes process fitted via INLA.
+The resulting enriched event table — with neighbour history and Hawkes
+intensity alongside coordinates and timestamps — is the natural input
+for a spatio-temporal intensity model such as a log-Gaussian Cox process
+or a Hawkes process fitted via INLA.

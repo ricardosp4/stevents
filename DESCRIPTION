@@ -16,8 +16,11 @@ Imports:
 URL: https://github.com/ricardosp4/stevents
 BugReports: https://github.com/ricardosp4/stevents/issues
 Suggests: 
+    ggplot2,
     knitr,
     rmarkdown,
+    rnaturalearth,
+    rnaturalearthdata,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3

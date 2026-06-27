@@ -75,7 +75,7 @@ stevents <- function(x, y, time, crs = NA) {
 
 #' @export
 print.stevents <- function(x, ...) {
-  # Compact, scannable header — typical R object printing style
+  # Compact, scannable header
   cat("<stevents> spatio-temporal event pattern\n")
   cat("  Events    : ", nrow(x$data), "\n", sep = "")
   cat("  Time range: ", format(x$t_range[1]), " -> ",
