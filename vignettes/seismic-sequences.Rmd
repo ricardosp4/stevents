@@ -65,32 +65,13 @@ library(sf)
 library(ggplot2)
 library(rnaturalearth)
 library(rnaturalearthdata)
-
-url <- paste0(
-  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
-  "&starttime=2026-06-22",
-  "&endtime=2026-07-27",
-  "&minmagnitude=2.5",
-  "&latitude=10.435",
-  "&longitude=-68.472",
-  "&maxradiuskm=200",
-  "&orderby=time"
-)
-
-raw <- read.csv(url(url), stringsAsFactors = FALSE)
 ```
 
 We retain only the columns needed and convert timestamps to `POSIXct`:
 
 ```{r clean}
-eq <- data.frame(
-  lon       = raw$longitude,
-  lat       = raw$latitude,
-  depth_km  = raw$depth,
-  magnitude = raw$mag,
-  time      = as.POSIXct(raw$time, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
-)
-
+data(venezuela_2026)
+eq <- venezuela_2026
 nrow(eq)
 range(eq$magnitude)
 range(eq$time)
@@ -242,32 +223,10 @@ contains 76 events of magnitude 2.5 or greater, making it a richer
 dataset for illustrating self-excitation than a simple
 mainshock–aftershock sequence.
 
-```{r italy-download, message = FALSE}
-url_italy <- paste0(
-  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
-  "&starttime=2016-08-20",
-  "&endtime=2016-12-20",
-  "&minmagnitude=2.5",
-  "&latitude=42.698",
-  "&longitude=13.234",
-  "&maxradiuskm=100",
-  "&orderby=time"
-)
-
-raw_italy <- read.csv(url(url_italy), stringsAsFactors = FALSE)
-
-italy <- data.frame(
-  lon       = raw_italy$longitude,
-  lat       = raw_italy$latitude,
-  depth_km  = raw_italy$depth,
-  magnitude = raw_italy$mag,
-  time      = as.POSIXct(raw_italy$time,
-                          format = "%Y-%m-%dT%H:%M:%OS",
-                          tz     = "UTC")
-)
-```
-
 ```{r italy-project}
+data(amatrice_2016)
+italy <- amatrice_2016
+
 pts_italy     <- st_as_sf(italy, coords = c("lon", "lat"), crs = 4326)
 pts_italy_utm <- st_transform(pts_italy, crs = 32633)  # UTM zone 33N for Italy
 coords_italy  <- st_coordinates(pts_italy_utm)
