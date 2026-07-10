@@ -23,6 +23,6 @@ venezuela_2026
 \description{
 Earthquakes of magnitude 2.5 or greater within 200 km of the
 24 June 2026 Mw 7.5 mainshock near Yumare, Venezuela.
-Downloaded from the USGS Earthquake Catalog API.
+Downloaded on 27 June 2026 from the USGS Earthquake Catalog API.
 }
 \keyword{datasets}

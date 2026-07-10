@@ -147,4 +147,4 @@ event data and intensity model fitting via INLA.
 
 ## License
 
-MIT © Ricardo
+Copyright (c) 2026 Ricardo Sales Piquer

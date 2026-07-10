@@ -70,7 +70,7 @@ library(rnaturalearthdata)
 We retain only the columns needed and convert timestamps to `POSIXct`:
 
 ```{r clean}
-data(venezuela_2026)
+load("../data/venezuela_2026.rda")
 eq <- venezuela_2026
 nrow(eq)
 range(eq$magnitude)
@@ -224,7 +224,7 @@ dataset for illustrating self-excitation than a simple
 mainshock–aftershock sequence.
 
 ```{r italy-project}
-data(amatrice_2016)
+load("../data/amatrice_2016.rda")
 italy <- amatrice_2016
 
 pts_italy     <- st_as_sf(italy, coords = c("lon", "lat"), crs = 4326)
@@ -249,7 +249,7 @@ italy_map <- ne_countries(
 )
 
 bbox_i <- st_bbox(pts_italy)
-buffer <- 0.15  # degrees
+buffer <- 0.25  # degrees
 
 ggplot() +
   geom_sf(data = italy_map, fill = "#F5F0E8", colour = "grey60",
