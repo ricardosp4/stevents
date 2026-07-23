@@ -6,3 +6,6 @@
 .quarto
 .positai
 inst/doc
+*.Rcheck/
+*.tar.gz
+build/
