@@ -13,7 +13,7 @@
 `stevents` provides tools for representing, manipulating, and analysing
 spatio-temporal point patterns. It was designed with wildfire ignition
 modelling in mind, but applies to any domain where events have both a
-location and a timestamp — seismology, epidemiology, criminology.
+location and a timestamp; seismology, epidemiology, criminology.
 
 ## Installation
 
@@ -90,7 +90,7 @@ summary(ev2$data$hawkes_intensity)
 ```
 
 The continuous kernel captures finer variation than a fixed binary
-window — events outside a discrete neighbourhood can still carry
+window, events outside a discrete neighbourhood can still carry
 non-trivial excitation.
 
 ``` r
