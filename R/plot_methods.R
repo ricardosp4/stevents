@@ -3,7 +3,7 @@
 #' Produces a two-panel figure: a spatial scatter of event locations (left)
 #' and a temporal intensity histogram (right).
 #'
-#' @importFrom graphics par hist axis
+#' @importFrom graphics par hist axis mtext
 #' @importFrom grDevices adjustcolor
 #'
 #' @param x An `stevents` object.
@@ -26,7 +26,7 @@
 #' )
 #' plot(ev)
 plot.stevents <- function(x, bins = 20, col = "#E05A2B", pch = 16, cex = 0.6, ...) {
-  old_par <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+  old_par <- par(mfrow = c(1, 2), mar = c(6, 4, 3, 1))
   on.exit(par(old_par))
 
   # --- Left: spatial scatter ---
@@ -54,17 +54,20 @@ plot.stevents <- function(x, bins = 20, col = "#E05A2B", pch = 16, cex = 0.6, ..
     breaks = breaks,
     col    = adjustcolor(col, alpha.f = 0.4),
     border = adjustcolor(col, alpha.f = 0.8),
-    xlab   = "Time",
+    xlab   = "",             # drawn manually below, after the rotated ticks
     ylab   = "Count",
     main   = "Temporal intensity",
     freq   = TRUE,
     xaxt   = "n"          # suppress default numeric axis
   )
 
-  # Draw a date axis: pick 5 evenly-spaced tick positions.
+  # Draw a date axis: pick 5 evenly-spaced tick positions, rotated labels.
   tick_at     <- pretty(x$data$time, n = 5)
   tick_labels <- format(tick_at, "%Y-%m-%d")
-  axis(1, at = as.numeric(tick_at), labels = tick_labels, cex.axis = 0.75, las = 2)
+  axis(1, at = as.numeric(tick_at), labels = tick_labels, cex.axis = 0.7, las = 2)
+
+  # Place the axis title below the rotated date labels so it doesn't overlap.
+  mtext("Time", side = 1, line = 4.5, cex = 0.85)
 
   invisible(x)
 }
@@ -158,7 +161,9 @@ plot.stgrid <- function(x, t_bin = NULL, pal = NULL, border = "grey70", ...) {
       legend = c(0, round(max_count / 2), max_count),
       fill   = pal[c(1, round(length(pal) / 2), length(pal))],
       title  = "Events",
-      bty    = "n",
+      bty    = "o",
+      bg     = "white",
+      box.col = "grey80",
       cex    = 0.75
     )
   }
