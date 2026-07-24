@@ -1,8 +1,11 @@
 #' Venezuela 2026 seismic sequence
 #'
 #' Earthquakes of magnitude 2.5 or greater within 200 km of the
-#' 24 June 2026 Mw 7.5 mainshock near Yumare, Venezuela.
-#' Downloaded on 27 June 2026 from the USGS Earthquake Catalog API.
+#' 24 June 2026 Mw 7.5 mainshock near Yumare, Venezuela, from the
+#' mainshock up to the download date (see `data-raw/venezuela_2026.R`
+#' to refresh it). Because USGS reviews and adds aftershocks over time,
+#' the exact number of rows depends on when the catalog was downloaded.
+#' Downloaded on July 24th 2026.
 #'
 #' @format A data frame with columns:
 #' \describe{

@@ -1,7 +1,7 @@
 url <- paste0(
   "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
   "&starttime=2026-06-20",
-  "&endtime=2026-07-30",
+  "&endtime=2026-07-24",
   "&minmagnitude=2.5",
   "&latitude=10.435",
   "&longitude=-68.472",
@@ -20,5 +20,7 @@ venezuela_2026 <- data.frame(
                          format = "%Y-%m-%dT%H:%M:%OS",
                          tz     = "UTC")
 )
+
+nrow(venezuela_2026)
 
 usethis::use_data(venezuela_2026, overwrite = TRUE)

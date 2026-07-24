@@ -14,13 +14,13 @@ RoxygenNote: 7.3.1
 Imports: sf
 URL: https://github.com/ricardosp4/stevents
 BugReports: https://github.com/ricardosp4/stevents/issues
-Suggests: ggplot2, knitr, rmarkdown, rnaturalearth, rnaturalearthdata,
-        testthat (>= 3.0.0)
+Suggests: ggplot2, gridExtra, knitr, rmarkdown, rnaturalearth,
+        rnaturalearthdata, testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Depends: R (>= 3.5)
 LazyData: true
 NeedsCompilation: no
-Packaged: 2026-07-23 10:37:12 UTC; root
+Packaged: 2026-07-23 22:58:48 UTC; root
 Author: Ricardo Sales Piquer [aut, cre]
 Maintainer: Ricardo Sales Piquer <ricardosalespiquer@gmail.com>
