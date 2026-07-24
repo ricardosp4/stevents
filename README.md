@@ -28,7 +28,10 @@ devtools::install_github("ricardosp4/stevents")
 | `stevents` | A set of events with coordinates and timestamps          |
 | `stgrid`   | A regular space-time tessellation for aggregating events |
 
-Each class has `print()`, `summary()`, and `plot()` methods.
+- `stevents`: in addition to `print()`, `summary()`, and `plot()`, it
+  has `subset()` (filter by time/space) and `as_sf()` (convert to `sf`).
+- `stgrid`: in addition to `print()`, `summary()`, and `plot()`, it has
+  `dim()` (data-cube size) and `as_sf()` (convert cells to `sf`).
 
 ## Functions
 
@@ -39,6 +42,7 @@ Each class has `print()`, `summary()`, and `plot()` methods.
 | `hawkes_intensity()` | Compute the Hawkes self-excitation kernel (continuous) |
 | `as_sf()` | Convert `stevents` to an `sf` point layer |
 | `subset()` | Filter events by time window and/or bounding box |
+| `dim()` | Get the size of an `stgrid` data cube (cells x time bins) |
 
 ## Quick start
 
@@ -147,4 +151,4 @@ event data and intensity model fitting via INLA.
 
 ## License
 
-MIT © Ricardo
+Copyright (c) 2026 Ricardo Sales Piquer
