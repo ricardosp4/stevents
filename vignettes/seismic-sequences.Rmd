@@ -45,8 +45,8 @@ library(rnaturalearthdata)
   This catalog is downloaded from the mainshock up to the download
   date (see `data-raw/venezuela_2026.R`), so its size grows every time
   it is refreshed, as USGS reviews and adds aftershocks. This is real,
-  unmodified API output - it illustrates a common situation in
-  operational seismology, where a catalog for a recent sequence is
+  unmodified API output, illustrating a common situation in
+  operational seismology: a catalog for a recent sequence stays
   incomplete until enough time has passed for full review.
 
 ```{r clean}
@@ -107,8 +107,8 @@ if (gridExtra_ok) {
 
 The Amatrice map shows a dense, elongated cloud of aftershocks tracing
 the ruptured fault segment. The Venezuela map shows the mainshock and
-its early aftershocks near Yumare, still a much sparser cloud than
-Amatrice's - consistent with a catalog still being populated.
+its early aftershocks near Yumare, a much sparser cloud than
+Amatrice's, consistent with a catalog that is still being populated.
 
 ## Building `stevents` objects
 
@@ -143,19 +143,37 @@ and revisited below.
 plot(events_italy)
 ```
 
-The left panel shows where events occurred (an elongated cloud along
-the fault); the right panel shows event counts over time. Two spikes
-are visible: the initial burst of aftershocks right after the 24
-August mainshock, and a second, larger burst after the 30 October
-Mw 6.5 event that reactivated the sequence - the classic Omori-Utsu
-decay pattern, restarted by a secondary event.
+The left panel shows where events occurred, an elongated cloud along
+the fault, and the right panel shows event counts over time. Two
+spikes are visible: the initial burst of aftershocks right after the
+24 August mainshock, and a second, larger burst after the 30 October
+Mw 6.5 event. Both bursts decay over the following days, which is the
+classic Omori-Utsu pattern: aftershock rate falls off roughly as a
+power law after a mainshock, and here it is visibly restarted by the
+second, comparably large event rather than following a single smooth
+decay for the whole three-month window.
 
 ## Self-excitation: neighbour history and Hawkes intensity
 
 `neighbor_history()` counts, for each event, how many earlier events
-occurred within a spatial radius and time lag - a discrete measure of
+occurred within a spatial radius and time lag, a discrete measure of
 local recent activity. `hawkes_intensity()` computes a continuous
 alternative using an exponential decay kernel in both time and space.
+
+**A note on the parameters used below.** `alpha`, `beta`, and `gamma`
+are set here by hand, not estimated from the data. This vignette
+demonstrates the mechanics of the kernel, not a fitted model: `beta`
+corresponds to an e-folding time of about two days, and `gamma` to an
+e-folding distance of about 30 km, chosen to roughly match the 3-day,
+30 km window used for `neighbor_history()` just above so the two
+measures are directly comparable in the plots that follow. These are
+physically plausible values for a shallow M6+ mainshock-aftershock
+sequence, but they are illustrative, not fitted. A proper analysis
+would estimate all three parameters from the event times and
+locations themselves, typically via maximum likelihood; that
+estimation step is intentionally out of scope for this package and is
+the natural next stage of the thesis work this package supports (see
+the Discussion below).
 
 ```{r hawkes}
 events_h <- neighbor_history(events_italy, radius = 30000, lag = 3 * 86400)
@@ -168,12 +186,24 @@ events_h <- hawkes_intensity(
 summary(events_h$data$hawkes_intensity)
 ```
 
+The minimum intensity in this summary corresponds to an event with
+essentially no recent, nearby predecessors, so the kernel contributes
+little beyond the first term or two of the sum. The maximum,
+`r round(max(events_h$data$hawkes_intensity), 2)`, is roughly
+`r round(max(events_h$data$hawkes_intensity) / max(min(events_h$data$hawkes_intensity), 1e-6), 1)`
+times the minimum, which is the size of the gap between an
+essentially isolated event and one that occurred immediately after a
+cluster of nearby predecessors. That gap is the whole point of the
+model: a homogeneous Poisson process would assign every event the same
+rate, and it is precisely this spread that motivates treating the
+sequence as self-exciting rather than uniformly random.
+
 ```{r hawkes-plot}
 plot(
   events_h$data$time, events_h$data$hawkes_intensity,
   type = "l", col = "#E05A2B",
   xlab = "Time (UTC)", ylab = "Hawkes intensity",
-  main = "Conditional intensity - Amatrice sequence"
+  main = "Conditional intensity: Amatrice sequence"
 )
 ```
 
@@ -181,7 +211,11 @@ This is the **conditional intensity** implied by the Hawkes kernel: how
 "excited" the process is at each moment, given all earlier events nearby
 in space and time. It spikes sharply after each mainshock and decays
 smoothly between events, unlike the discrete, blocky counts in
-`neighbor_history()`.
+`neighbor_history()`. The two spikes line up with the same two bursts
+seen in the temporal histogram above, the 24 August mainshock and the
+30 October Mw 6.5 reactivation, and each decays back toward baseline
+over roughly the two-day timescale set by `beta`, exactly as that
+parameter choice implies it should.
 
 ```{r compare}
 plot(
@@ -196,22 +230,47 @@ abline(lm(hawkes_intensity ~ n_recent_neighbors, data = events_h$data),
 ```
 
 Each point compares, for one event, its discrete neighbour count
-against its continuous Hawkes intensity. The positive trend (dashed
-line) confirms the two measures agree on average, but the scatter shows
-they are not interchangeable: `hawkes_intensity()` also credits events
-just outside the fixed radius/lag window, weighted by distance and
-recency, so two events with the same discrete count can have different
-continuous intensities.
+against its continuous Hawkes intensity. Pooled across the whole
+sequence the two are only weakly correlated (Pearson's r =
+`r round(cor(events_h$data$n_recent_neighbors, events_h$data$hawkes_intensity), 2)`),
+and the dashed regression line is close to flat, which looks, at
+first glance, like the two measures barely agree. Looking at the
+shape rather than just the line tells a different story: the points
+do not form one cloud but two rise-and-fall arcs, intensity climbs
+with neighbour count up to a first local peak, falls back toward
+zero even as the neighbour count keeps rising, then climbs to a
+second, higher peak before falling again at the largest neighbour
+counts. That two-arc shape lines up with the sequence's two
+mainshocks. `neighbor_history()` keeps counting an event as a
+"recent neighbour" for the full 3-day window regardless of how long
+ago within that window it occurred, so the count stays high for a
+while after a burst has already started thinning out. `hawkes_intensity()`,
+with its much shorter two-day e-folding time, forgets faster: an
+event late in the tail of a burst can still have a large discrete
+neighbour count while its continuous intensity has already decayed
+close to zero. The points with high neighbour counts but intensity
+near zero, visible at both ends of the plot, are exactly these
+late-in-the-burst events. Pooling two separate mainshock-aftershock
+episodes into a single scatterplot is therefore what makes the
+overall correlation look weak: the discrepancy is not noise, it is
+the hard-window count and the fast-decaying kernel disagreeing about
+how "recent" is defined, applied twice, once per mainshock.
 
 ## Venezuela: a growing catalog
 
 Whether we go further than the map and summary above depends on
 `ven_full_run` (defined earlier): with fewer than `r ven_min_n` events,
 `neighbor_history()` and `hawkes_intensity()` would run without error,
-but their output would not be a meaningful estimate of self-excitation
-- a realistic constraint of working with live catalogs, not a
+but their output would not be a meaningful estimate of self-excitation,
+a realistic constraint of working with live catalogs rather than a
 limitation of the package. When the catalog has grown enough, the same
-two-step workflow used for Amatrice is applied here as well.
+two-step workflow used for Amatrice is applied here as well, reusing
+the same `alpha`, `beta`, and `gamma` values rather than re-tuning
+them for Venezuela specifically. That reuse is deliberate for
+comparability between the two sequences, but it also means the
+Venezuela intensities below should be read as "what the Amatrice-scale
+kernel would predict here," not as a result calibrated to this
+mainshock's own magnitude or fault geometry.
 
 ```{r venezuela-full, eval = ven_full_run}
 events_ven_h <- neighbor_history(events_ven, radius = 30000, lag = 3 * 86400)
@@ -224,7 +283,7 @@ plot(
   events_ven_h$data$time, events_ven_h$data$hawkes_intensity,
   type = "l", col = "#E05A2B",
   xlab = "Time (UTC)", ylab = "Hawkes intensity",
-  main = "Conditional intensity - Venezuela sequence"
+  main = "Conditional intensity: Venezuela sequence"
 )
 ```
 
@@ -239,14 +298,26 @@ cat(
 
 Applying the same functions to a complete catalog (Amatrice) and a
 still-growing one (Venezuela) shows both the strength and a limit of
-the workflow: `stevents` and `stgrid` handle real, irregular
+the workflow. `stevents` and `stgrid` handle real, irregular
 spatio-temporal point patterns directly from `sf`/`POSIXct` data, and
 `hawkes_intensity()` recovers a smooth, physically interpretable
-excitation signal from a well-sampled sequence. But the method is only
-as good as the data feeding it - a useful reminder when applying it to
-real-time monitoring rather than retrospective analysis. Estimating the
-kernel parameters from data via maximum likelihood, rather than setting
-them by hand as done here, is the natural next step.
+excitation signal from a well-sampled sequence, visibly matching the
+timing of the known Amatrice bursts and giving a graded picture that
+the discrete neighbour counts alone do not. But the method is only as
+good as the data feeding it, a useful reminder when applying it to
+real-time monitoring rather than retrospective analysis, and it is
+only as good as the parameters driving it.
+
+Every number reported above for `alpha`, `beta`, and `gamma` was
+chosen by hand, not fitted, so the intensities and the correlation
+with `neighbor_history()` reflect a plausible kernel for this kind of
+sequence, not a kernel estimated from the Amatrice or Venezuela data
+themselves. Nothing in this vignette should be read as a claim about
+the true excitation parameters of either sequence. Estimating
+`alpha`, `beta`, and `gamma` from the data via maximum likelihood,
+rather than setting them by hand as done here, is the natural next
+step, and is exactly the estimation problem the broader thesis
+addresses via an INLA-based likelihood approach.
 
 ## LLM usage
 

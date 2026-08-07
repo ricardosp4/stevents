@@ -21,6 +21,4 @@ venezuela_2026 <- data.frame(
                          tz     = "UTC")
 )
 
-nrow(venezuela_2026)
-
 usethis::use_data(venezuela_2026, overwrite = TRUE)
