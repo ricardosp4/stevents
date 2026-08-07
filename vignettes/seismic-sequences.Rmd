@@ -25,7 +25,7 @@ captured here by the exponential kernel in `hawkes_intensity()`. This
 vignette applies `stevents` to two real earthquake catalogs downloaded
 from the USGS Earthquake Catalog API, and uses them together to
 illustrate the package's workflow and the difference between a
-*complete* and a *still-growing* catalog.
+complete and a still-growing catalog.
 
 ```{r libs, message = FALSE}
 library(stevents)
@@ -37,17 +37,18 @@ library(rnaturalearthdata)
 
 ## Data
 
-- **Amatrice 2016** (Italy): a Mw 6.2 mainshock on 24 August 2016,
-  followed by a Mw 6.5 event on 30 October 2016. The bundled catalog
-  covers three months and 74 events of magnitude 2.5+, i.e. a
-  post-hoc, essentially complete record of the sequence.
-- **Venezuela 2026**: a Mw 7.5 mainshock on 24 June 2026 near Yumare.
-  This catalog is downloaded from the mainshock up to the download
-  date (see `data-raw/venezuela_2026.R`), so its size grows every time
-  it is refreshed, as USGS reviews and adds aftershocks. This is real,
-  unmodified API output, illustrating a common situation in
-  operational seismology: a catalog for a recent sequence stays
-  incomplete until enough time has passed for full review.
+**Amatrice 2016** (Italy): a Mw 6.2 mainshock on 24 August 2016,
+followed by a Mw 6.5 event on 30 October 2016. The bundled catalog
+covers three months and 74 events of magnitude 2.5+, i.e. a
+post-hoc, essentially complete record of the sequence.
+
+**Venezuela 2026**: a Mw 7.5 mainshock on 24 June 2026 near Yumare.
+This catalog is downloaded from the mainshock up to the download
+date (see `data-raw/venezuela_2026.R`), so its size grows every time
+it is refreshed, as USGS reviews and adds aftershocks. This is real,
+unmodified API output, illustrating a common situation in
+operational seismology: a catalog for a recent sequence stays
+incomplete until enough time has passed for full review.
 
 ```{r clean}
 data(amatrice_2016)
@@ -80,7 +81,7 @@ make_map <- function(eq, country, label) {
   bg  <- ne_countries(country = country, scale = "medium", returnclass = "sf")
   pts <- st_as_sf(eq, coords = c("lon", "lat"), crs = 4326)
   bb  <- st_bbox(pts)
-  buf <- 0.3
+  buf <- 0.15
 
   ggplot() +
     geom_sf(data = bg, fill = "#F5F0E8", colour = "grey60", linewidth = 0.3) +
@@ -160,7 +161,7 @@ occurred within a spatial radius and time lag, a discrete measure of
 local recent activity. `hawkes_intensity()` computes a continuous
 alternative using an exponential decay kernel in both time and space.
 
-**A note on the parameters used below.** `alpha`, `beta`, and `gamma`
+**A note on the parameters used below:** `alpha`, `beta`, and `gamma`
 are set here by hand, not estimated from the data. This vignette
 demonstrates the mechanics of the kernel, not a fitted model: `beta`
 corresponds to an e-folding time of about two days, and `gamma` to an
@@ -186,17 +187,18 @@ events_h <- hawkes_intensity(
 summary(events_h$data$hawkes_intensity)
 ```
 
-The minimum intensity in this summary corresponds to an event with
-essentially no recent, nearby predecessors, so the kernel contributes
-little beyond the first term or two of the sum. The maximum,
-`r round(max(events_h$data$hawkes_intensity), 2)`, is roughly
-`r round(max(events_h$data$hawkes_intensity) / max(min(events_h$data$hawkes_intensity), 1e-6), 1)`
-times the minimum, which is the size of the gap between an
-essentially isolated event and one that occurred immediately after a
-cluster of nearby predecessors. That gap is the whole point of the
-model: a homogeneous Poisson process would assign every event the same
-rate, and it is precisely this spread that motivates treating the
-sequence as self-exciting rather than uniformly random.
+The minimum intensity in this summary is exactly zero, which
+corresponds to an event with no recent, nearby predecessors at all:
+the kernel sum is empty, so only the background contributes. The
+median, 2.82, and mean, 3.19, sit well below the maximum, 8.57, and
+the mean exceeds the median, indicating a right-skewed distribution:
+most events carry a modest intensity, while a smaller number sit
+much closer to the peak, immediately after a cluster of nearby
+predecessors. That spread, from a hard floor at zero to a peak nearly
+three times the mean, is the whole point of the model: a homogeneous
+Poisson process would assign every event the same rate, and it is
+precisely this spread that motivates treating the sequence as
+self-exciting rather than uniformly random.
 
 ```{r hawkes-plot}
 plot(
@@ -207,7 +209,7 @@ plot(
 )
 ```
 
-This is the **conditional intensity** implied by the Hawkes kernel: how
+This is the conditional intensity implied by the Hawkes kernel: how
 "excited" the process is at each moment, given all earlier events nearby
 in space and time. It spikes sharply after each mainshock and decays
 smoothly between events, unlike the discrete, blocky counts in
@@ -318,6 +320,12 @@ the true excitation parameters of either sequence. Estimating
 rather than setting them by hand as done here, is the natural next
 step, and is exactly the estimation problem the broader thesis
 addresses via an INLA-based likelihood approach.
+
+This decomposition into background rate and self-excitation is the
+core idea a Hawkes model adds on top of a simple point pattern, and
+working through it here, with real aftershock data rather than a
+toy example, was a useful way to build intuition for the process
+before applying it elsewhere.
 
 ## LLM usage
 
